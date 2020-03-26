@@ -1,13 +1,9 @@
 package io.ktor.utils.io.core.internal
 
-import kotlinx.atomicfu.AtomicRef
-import kotlinx.atomicfu.atomic
-import kotlinx.atomicfu.update
-import kotlinx.atomicfu.updateAndGet
 import io.ktor.utils.io.bits.*
-import io.ktor.utils.io.bits.DefaultAllocator
 import io.ktor.utils.io.core.*
 import io.ktor.utils.io.pool.*
+import kotlinx.atomicfu.*
 
 @DangerousInternalIoApi
 open class ChunkBuffer internal constructor(memory: Memory, origin: ChunkBuffer?) : Buffer(memory) {
@@ -21,15 +17,20 @@ open class ChunkBuffer internal constructor(memory: Memory, origin: ChunkBuffer?
     /**
      * Reference to an origin buffer view this was copied from
      */
-    var origin: ChunkBuffer? = origin
-        private set
+    private final val _origin = atomic(origin)
+    var origin: ChunkBuffer?
+        get() = _origin.value
+        private set(value) {
+            _origin.value = value
+        }
 
     /**
      * Reference to next buffer view. Useful to chain multiple views.
      * @see appendNext
      * @see cleanNext
      */
-    var next: ChunkBuffer? get() = nextRef.value
+    var next: ChunkBuffer?
+        get() = nextRef.value
         set(newValue) {
             if (newValue == null) {
                 cleanNext()
@@ -46,9 +47,7 @@ open class ChunkBuffer internal constructor(memory: Memory, origin: ChunkBuffer?
         }
     }
 
-    fun cleanNext(): ChunkBuffer? {
-        return nextRef.getAndSet(null)
-    }
+    fun cleanNext(): ChunkBuffer? = nextRef.getAndSet(null)
 
     override fun duplicate(): ChunkBuffer = (origin ?: this).let { newOrigin ->
         newOrigin.acquire()
@@ -120,7 +119,6 @@ open class ChunkBuffer internal constructor(memory: Memory, origin: ChunkBuffer?
 
         super.reset()
         @Suppress("DEPRECATION")
-        attachment = null
         nextRef.value = null
     }
 
@@ -148,7 +146,8 @@ open class ChunkBuffer internal constructor(memory: Memory, origin: ChunkBuffer?
         }
 
         @Suppress("DEPRECATION")
-        val Empty: ChunkBuffer get() = IoBuffer.Empty
+        val Empty: ChunkBuffer
+            get() = IoBuffer.Empty
 
         /**
          * A pool that always returns [ChunkBuffer.Empty]

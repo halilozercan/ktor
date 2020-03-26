@@ -13,7 +13,6 @@ import kotlinx.cinterop.*
 import kotlinx.coroutines.*
 import platform.posix.*
 import kotlin.coroutines.*
-import kotlin.native.concurrent.*
 
 internal class TCPSocketNative(
     private val descriptor: Int,
@@ -32,7 +31,6 @@ internal class TCPSocketNative(
 
     @KtorExperimentalAPI
     override fun attachForReading(userChannel: ByteChannel): WriterJob {
-        userChannel.ensureNeverFrozen()
         return writer(Dispatchers.Unconfined, userChannel) {
             channel.writeSuspendSession {
                 while (!channel.isClosedForWrite) {
@@ -74,40 +72,36 @@ internal class TCPSocketNative(
     }
 
     @KtorExperimentalAPI
-    override fun attachForWriting(userChannel: ByteChannel): ReaderJob {
-        userChannel.ensureNeverFrozen()
+    override fun attachForWriting(userChannel: ByteChannel): ReaderJob = reader(Dispatchers.Unconfined, userChannel) {
+        channel.readSuspendableSession {
+            var buffer: IoBuffer? = null
+            while (await()) {
+                if (buffer == null || !buffer.canRead()) {
+                    buffer = request() ?: error("Internal error; Can't request buffer.")
+                }
 
-        return reader(Dispatchers.Unconfined, userChannel) {
-            channel.readSuspendableSession {
-                var buffer: IoBuffer? = null
-                while (await()) {
-                    if (buffer == null || !buffer.canRead()) {
-                        buffer = request() ?: error("Internal error; Can't request buffer.")
-                    }
+                buffer.readDirect {
+                    val result = send(descriptor, it, buffer.readRemaining.convert(), 0).toInt()
 
-                    buffer.readDirect {
-                        val result = send(descriptor, it, buffer.readRemaining.convert(), 0).toInt()
-
-                        if (result == -1) {
-                            if (errno == EAGAIN) {
-                                return@readDirect 0
-                            }
-
-                            error("Send error: $errno")
+                    if (result == -1) {
+                        if (errno == EAGAIN) {
+                            return@readDirect 0
                         }
 
-                        result.convert()
+                        error("Send error: $errno")
                     }
 
-                    if (buffer.canRead()) {
-                        selector.select(selectable, SelectInterest.WRITE)
-                    }
+                    result.convert()
+                }
+
+                if (buffer.canRead()) {
+                    selector.select(selectable, SelectInterest.WRITE)
                 }
             }
-        }.apply {
-            invokeOnCompletion {
-                shutdown(descriptor, SHUT_WR)
-            }
+        }
+    }.apply {
+        invokeOnCompletion {
+            shutdown(descriptor, SHUT_WR)
         }
     }
 

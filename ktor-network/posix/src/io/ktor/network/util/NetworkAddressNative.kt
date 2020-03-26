@@ -62,7 +62,7 @@ internal class IPv6Address(
             sin6_port = port.convert()
             sin6_scope_id = scopeId
 
-            TODO()
+            TODO("ipv6 implementation")
 
             block(ptr.reinterpret(), sockaddr_in6.size.convert())
         }
@@ -72,4 +72,4 @@ internal class IPv6Address(
 actual class UnresolvedAddressException : IllegalArgumentException()
 
 actual val NetworkAddress.isResolved: Boolean
-    get() = TODO("not implemented") //To change initializer of created properties use File | Settings | File Templates.
+    get() = true

@@ -2,10 +2,33 @@
 
 package io.ktor.utils.io.core
 
+import io.ktor.utils.io.*
 import io.ktor.utils.io.bits.*
 import io.ktor.utils.io.core.internal.*
 import io.ktor.utils.io.core.internal.require
 import io.ktor.utils.io.pool.*
+import kotlinx.atomicfu.*
+import kotlin.Boolean
+import kotlin.Byte
+import kotlin.ByteArray
+import kotlin.Char
+import kotlin.CharArray
+import kotlin.CharSequence
+import kotlin.Deprecated
+import kotlin.DeprecationLevel
+import kotlin.IllegalArgumentException
+import kotlin.IllegalStateException
+import kotlin.Int
+import kotlin.Long
+import kotlin.Nothing
+import kotlin.PublishedApi
+import kotlin.String
+import kotlin.Suppress
+import kotlin.Throwable
+import kotlin.Unit
+import kotlin.UnsupportedOperationException
+import kotlin.also
+import kotlin.error
 
 /**
  * The default abstract base class implementing [Input] interface.
@@ -19,9 +42,11 @@ abstract class AbstractInput(
 
     @Suppress("DEPRECATION")
     @Deprecated("Binary compatibility.", level = DeprecationLevel.HIDDEN)
-    constructor(head: IoBuffer = IoBuffer.Empty,
-                remaining: Long = head.remainingAll(),
-                pool: ObjectPool<ChunkBuffer> = ChunkBuffer.Pool) : this(head as ChunkBuffer, remaining, pool)
+    constructor(
+        head: IoBuffer = IoBuffer.Empty,
+        remaining: Long = head.remainingAll(),
+        pool: ObjectPool<ChunkBuffer> = ChunkBuffer.Pool
+    ) : this(head as ChunkBuffer, remaining, pool)
 
     /**
      * Read the next bytes into the [destination] starting at [offset] at most [length] bytes.
@@ -40,12 +65,15 @@ abstract class AbstractInput(
      */
     protected abstract fun closeSource()
 
+    private final val __head: AtomicRef<ChunkBuffer> = atomic(head)
+
     /**
      * Current head chunk reference
      */
-    private final var _head: ChunkBuffer = head
+    private final var _head: ChunkBuffer
+        get() = __head.value
         set(newHead) {
-            field = newHead
+            __head.value = newHead
             headMemory = newHead.memory
             headPosition = newHead.readPosition
             headEndExclusive = newHead.writePosition
@@ -60,14 +88,20 @@ abstract class AbstractInput(
             _head = newHead
         }
 
-    @PublishedApi
-    internal final var headMemory: Memory = head.memory
+    private final val _headMemory = atomic(head.memory)
 
     @PublishedApi
-    internal final var headPosition = head.readPosition
+    internal final var headMemory: Memory
+        get() = _headMemory.value
+        set(value) {
+            _headMemory.value = value
+        }
 
     @PublishedApi
-    internal final var headEndExclusive = head.writePosition
+    internal final var headPosition by atomic(head.readPosition)
+
+    @PublishedApi
+    internal final var headEndExclusive by atomic(head.writePosition)
 
     @PublishedApi
     @Suppress("DEPRECATION_ERROR")
@@ -78,7 +112,9 @@ abstract class AbstractInput(
             updateHeadRemaining(newRemaining)
         }
 
-    private var tailRemaining: Long = remaining - headRemaining
+    private val _tailRemaining = atomic(remaining - headRemaining)
+    private var tailRemaining: Long
+        get() = _tailRemaining.value
         set(newValue) {
             if (newValue < 0) {
                 error("tailRemaining is negative: $newValue")
@@ -94,7 +130,7 @@ abstract class AbstractInput(
                 error("tailRemaining is set to a value that is not consistent with the actual tail: $newValue != $tailSize")
             }
 
-            field = newValue
+            _tailRemaining.value = newValue
         }
 
     @Deprecated(
@@ -445,7 +481,7 @@ abstract class AbstractInput(
      */
     fun readText(out: Appendable, min: Int = 0, max: Int = Int.MAX_VALUE): Int {
         if (max.toLong() >= remaining) {
-            val s = readTextExactBytes(bytesCount = remaining.toInt() )
+            val s = readTextExactBytes(bytesCount = remaining.toInt())
             out.append(s)
             return s.length
         }
@@ -465,7 +501,7 @@ abstract class AbstractInput(
     fun readText(min: Int = 0, max: Int = Int.MAX_VALUE): String {
         if (min == 0 && (max == 0 || endOfInput)) return ""
         val remaining = remaining
-        if (remaining > 0 && max.toLong() >= remaining) return readTextExactBytes(bytesCount = remaining.toInt() )
+        if (remaining > 0 && max.toLong() >= remaining) return readTextExactBytes(bytesCount = remaining.toInt())
 
         return buildString(min.coerceAtLeast(16).coerceAtMost(max)) {
             readASCII(this, min, max)

@@ -89,28 +89,23 @@ sealed class SocketOptions(
         @Suppress("KDocMissingDocumentation")
         override fun copyCommon(from: SocketOptions) {
             super.copyCommon(from)
+
             if (from is PeerSocketOptions) {
                 sendBufferSize = from.sendBufferSize
                 receiveBufferSize = from.receiveBufferSize
             }
         }
 
-        override fun copy(): PeerSocketOptions {
-            return PeerSocketOptions(HashMap(customOptions)).apply {
-                copyCommon(this@PeerSocketOptions)
-            }
+        override fun copy(): PeerSocketOptions = PeerSocketOptions(HashMap(customOptions)).apply {
+            copyCommon(this@PeerSocketOptions)
         }
 
-        internal fun tcp(): TCPClientSocketOptions {
-            return TCPClientSocketOptions(HashMap(customOptions)).apply {
-                copyCommon(this@PeerSocketOptions)
-            }
+        internal fun tcp(): TCPClientSocketOptions = TCPClientSocketOptions(HashMap(customOptions)).apply {
+            copyCommon(this@PeerSocketOptions)
         }
 
-        internal fun udp(): UDPSocketOptions {
-            return UDPSocketOptions(HashMap(customOptions)).apply {
-                copyCommon(this@PeerSocketOptions)
-            }
+        internal fun udp(): UDPSocketOptions = UDPSocketOptions(HashMap(customOptions)).apply {
+            copyCommon(this@PeerSocketOptions)
         }
     }
 
@@ -151,7 +146,7 @@ sealed class SocketOptions(
         /**
          * Socket timeout (read and write).
          */
-        var socketTimeout: Long = INFINITE_TIMEOUT_MS
+        var socketTimeout: Long = Long.MAX_VALUE
 
         @Suppress("KDocMissingDocumentation")
         override fun copyCommon(from: SocketOptions) {

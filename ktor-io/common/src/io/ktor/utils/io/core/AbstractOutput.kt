@@ -2,10 +2,12 @@
 
 package io.ktor.utils.io.core
 
+import io.ktor.utils.io.*
 import io.ktor.utils.io.bits.*
-import io.ktor.utils.io.charsets.Charsets
+import io.ktor.utils.io.charsets.*
 import io.ktor.utils.io.core.internal.*
-import io.ktor.utils.io.pool.ObjectPool
+import io.ktor.utils.io.pool.*
+import kotlinx.atomicfu.*
 
 /**
  * The default [Output] implementation.
@@ -34,8 +36,19 @@ internal constructor(
      */
     protected abstract fun closeDestination()
 
-    private var _head: ChunkBuffer? = null
-    private var _tail: ChunkBuffer? = null
+    private final val __head = atomic<ChunkBuffer?>(null)
+    private final val __tail = atomic<ChunkBuffer?>(null)
+
+    private var _head: ChunkBuffer?
+        get() = __head.value
+        set(value) {
+            __head.value = value
+        }
+    private var _tail: ChunkBuffer?
+        get() = __tail.value
+        set(value) {
+            __tail.value = value
+        }
 
     internal val head: ChunkBuffer
         get() = _head ?: ChunkBuffer.Empty
@@ -54,17 +67,23 @@ internal constructor(
             appendChain(newValue)
         }
 
-    internal var tailMemory: Memory = Memory.Empty
-    internal var tailPosition = 0
-    internal var tailEndExclusive = 0
+    private final val _tailMemory = atomic(Memory.Empty)
+    internal var tailMemory: Memory
+        get() = _tailMemory.value
+        set(value) {
+            _tailMemory.value = value
+        }
+
+    internal var tailPosition by atomic(0)
+    internal var tailEndExclusive by atomic(0)
         private set
 
-    private var tailInitialPosition = 0
+    private var tailInitialPosition by atomic(0)
 
     /**
      * Number of bytes buffered in the chain except the tail chunk
      */
-    private var chainedSize: Int = 0
+    private var chainedSize: Int by atomic(0)
 
     internal inline val tailRemaining: Int get() = tailEndExclusive - tailPosition
 
@@ -484,9 +503,11 @@ internal constructor(
     }
 
     @Suppress("DEPRECATION")
-    @Deprecated("Use appendNewChunk instead",
+    @Deprecated(
+        "Use appendNewChunk instead",
         replaceWith = ReplaceWith("appendNewChunk()"),
-        level = DeprecationLevel.HIDDEN)
+        level = DeprecationLevel.HIDDEN
+    )
     fun appendNewBuffer(): IoBuffer = appendNewChunk() as IoBuffer
 
     @Deprecated("Binary compatibility.", level = DeprecationLevel.HIDDEN)

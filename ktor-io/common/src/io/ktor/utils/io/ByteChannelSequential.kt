@@ -5,6 +5,7 @@ import io.ktor.utils.io.core.*
 import io.ktor.utils.io.core.internal.*
 import io.ktor.utils.io.internal.*
 import io.ktor.utils.io.pool.*
+import kotlinx.atomicfu.*
 
 @Deprecated("This is going to become internal. Use ByteReadChannel receiver instead.", level = DeprecationLevel.ERROR)
 suspend fun ByteChannelSequentialBase.joinTo(dst: ByteChannelSequentialBase, closeOnEnd: Boolean) {
@@ -34,16 +35,25 @@ abstract class ByteChannelSequentialBase(
     @Deprecated("Binary compatibility.", level = DeprecationLevel.HIDDEN)
     constructor(initial: IoBuffer, autoFlush: Boolean) : this(initial, autoFlush, ChunkBuffer.Pool)
 
-    protected var closed = false
+    private val _closed: AtomicBoolean = atomic(false)
+
+    protected var closed: Boolean
+        get() = _closed.value
+        set(value) {
+            _closed.value = value
+        }
+
     protected val writable = BytePacketBuilder(0, pool)
     protected val readable = ByteReadPacket(initial, pool)
 
     internal val notFull = Condition { totalPending() <= 4088L }
 
-    private var waitingForSize = 1
+    private var waitingForSize: Int by atomic(1)
+
     private val atLeastNBytesAvailableForWrite = Condition { availableForWrite >= waitingForSize || closed }
 
-    private var waitingForRead = 1
+    private var waitingForRead by atomic(1)
+
     private val atLeastNBytesAvailableForRead = Condition { availableForRead >= waitingForRead || closed }
 
     @Suppress("NOTHING_TO_INLINE")
@@ -71,8 +81,8 @@ abstract class ByteChannelSequentialBase(
     override val totalBytesWritten: Long
         get() = 0L
 
-    final override var closedCause: Throwable? = null
-        private set
+    private val _closedCause: AtomicRef<Throwable?> = atomic(null)
+    final override val closedCause: Throwable? get() = _closedCause.value
 
     override fun flush() {
         if (writable.isNotEmpty) {
@@ -504,8 +514,13 @@ abstract class ByteChannelSequentialBase(
         return readBoolean()
     }
 
-    private var lastReadAvailable = 0
-    private var lastReadView: ChunkBuffer = ChunkBuffer.Empty
+    private var lastReadAvailable by atomic(0)
+    private val _lastReadView = atomic(ChunkBuffer.Empty)
+    private var lastReadView: ChunkBuffer
+        get() = _lastReadView.value
+        set(value) {
+            _lastReadView.value = value
+        }
 
     private fun completeReading() {
         val remaining = lastReadView.readRemaining
@@ -656,7 +671,7 @@ abstract class ByteChannelSequentialBase(
 
     override fun close(cause: Throwable?): Boolean {
         if (closed || closedCause != null) return false
-        closedCause = cause
+        _closedCause.value = cause
         closed = true
         if (cause != null) {
             readable.release()

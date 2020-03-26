@@ -1,18 +1,26 @@
 package io.ktor.utils.io
 
+import kotlinx.atomicfu.*
+import kotlinx.coroutines.*
 import kotlin.coroutines.*
 
 internal actual class Condition actual constructor(val predicate: () -> Boolean) {
-    private var cont: Continuation<Unit>? = null
+    private var _continuation = atomic<Continuation<Unit>?>(null)
+
+    private var continuation: Continuation<Unit>?
+        get() = _continuation.value
+        set(value) {
+            _continuation.value = value
+        }
 
     actual fun check(): Boolean {
         return predicate()
     }
 
     actual fun signal() {
-        val cont = cont
+        val cont = continuation
         if (cont != null && predicate()) {
-            this.cont = null
+            this.continuation = null
             cont.resume(Unit)
         }
     }
@@ -20,16 +28,17 @@ internal actual class Condition actual constructor(val predicate: () -> Boolean)
     actual suspend fun await(block: () -> Unit) {
         if (predicate()) return
 
-        return suspendCoroutine { c ->
-            cont = c
+        return suspendCancellableCoroutine { c ->
+            continuation = c
             block()
         }
     }
+
     actual suspend fun await() {
         if (predicate()) return
 
-        return suspendCoroutine { c ->
-            cont = c
+        return suspendCancellableCoroutine { c ->
+            continuation = c
         }
     }
 }
